@@ -11,7 +11,7 @@ The token is stored in an environmental variable.
 
 API_URL = 'https://api.mist.com/api/v1'                         # API URL will change depending on your global 
 TOKEN = os.getenv("<ENTER-YOUR-TOKEN-ENV-VARIABLE>")            # Calling an environment variable
-ORG_ID = '<ENTER-YOUR-ORG-ID'                                   # Add in the org ID
+ORG_ID = '<ENTER-YOUR-ORG-ID>'                                   # Add in the org ID
 
 headers = { "Authorization": f"Token {TOKEN}"}
 
