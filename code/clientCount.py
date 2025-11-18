@@ -1,49 +1,102 @@
 import requests
 import os
 import time
-
-"""
-Written by Rowell Dionicio (@rowelldionicio)
-Created on: November 15, 2025
-This script iterates through all sites in an organization to gather total client count and outputs for Telegraf
-The token is stored in an environmental variable.
-"""
+from urllib.parse import urljoin								# URL manipulation - for handling relative/absolute paths
 
 API_URL = 'https://api.mist.com/api/v1'                         # API URL will change depending on your global 
-TOKEN = os.getenv("<ENTER-YOUR-TOKEN-ENV-VARIABLE>")            # Calling an environment variable
-ORG_ID = '<ENTER-YOUR-ORG-ID>'                                   # Add in the org ID
+TOKEN = os.getenv("<ENTER YOUR TOKEN ENV")                      # Calling an environment variable
+ORG_ID = '<ENTER YOUR ORG ID>'                                  # Add in the org ID
 
 headers = { "Authorization": f"Token {TOKEN}"}
 
-def getSites():
-    # Block of code gets all sites in the specified Org
-    url = f"{API_URL}/orgs/{ORG_ID}/sites"                      # The API url used to get all sites in the org
-    r = requests.request("GET", url, headers=headers)           # Placing the result in the variable, r
-    return r.json()                                             # Returning the result in json format
+# Get all clients in an org from the last 60 minutes of associations
+def getAllClients(duration="60m"):
+    url = f"{API_URL}/orgs/{ORG_ID}/clients/search"
+    params = {"duration": duration, "limit": 1000}				# Query parameters with 1000 results per page
 
-def getClients(siteID):
-    #Block of code gets all Connected clients in a site
-    url = f"{API_URL}/sites/{siteID}/stats/clients"             # The API url used to get statistics of clients in a site
-    r = requests.request("GET", url, headers=headers)           # Placing the result in the variable, r
-    return r.json()                                             # Returning the result in json format
+    allClients = []
+	
+    while url:
+        response = requests.get(url, headers=headers, params=params)
+        response.raise_for_status()
+        data = response.json()
+
+        allClients.extend(data.get("results", []))
+
+        # After the first request, follow the 'next' URL directly.
+        next_url = data.get("next")
+        if next_url:
+            # If it's a relative URL, join it with the base URL
+            if next_url.startswith('/'):
+                url = urljoin('https://api.mist.com', next_url)
+            else:
+                # If it's absolute, use it as-is
+                url = next_url
+        else: 
+            url = None
+        
+        params = None
     
+    return allClients
+
 def main():
-    sites = getSites()                                          # Placing the return from getSites() function into variable, sites
-    totalClients = 0                                            # Initializing the variable with a zero integer
+    # Protocol counters
+    beTotal = 0
+    axTotal = 0
+    acTotal = 0
+    nTotal = 0
+    gTotal = 0
+    bTotal = 0
+    aTotal = 0
+    otherTotal = 0
 
-    timestamp = int(time.time() * 1000000000)                   # Getting timestamp in nanoseconds for InfluxDB
+    # Band counters
+    totalBand24 = 0
+    totalBand5 = 0
+    totalBand6 = 0
+    totalBandOther = 0
 
-    for site in sites:                                          # Looping through each site
-        # Block of code to get site ID
-        siteID = site.get("id")                                 # Getting the Site ID and putting the result into the varialbe, siteID
+    clients = getAllClients(duration="60m")
 
-        clients = getClients(siteID)                            # Calling getClients function and putting results into variable, clients
-        for client in clients:
-            totalClients += 1
-            
-    #print(int(totalClients))
-    print(f"mist_client_summary,org_id={ORG_ID} total={totalClients} {timestamp}")
-            
+    # Use a set to count unique MAC addresses
+    macs = {c.get("mac") for c in clients if c.get("mac")}
+    totalClients = len(macs)
+
+    # Counting protocols and bands used
+    for client in clients:                                          
+        protocol = client.get("protocol")
+        if protocol:
+            if protocol == "be":
+                beTotal += 1
+            elif protocol == "ax":
+                axTotal += 1
+            elif protocol == "ac":
+                acTotal += 1
+            elif protocol == "n":
+                nTotal += 1
+            elif protocol == "g":
+                gTotal += 1
+            elif protocol == "b":
+                bTotal += 1
+            elif protocol == "a":
+                aTotal += 1
+            else:
+                otherTotal += 1
+        
+        band = client.get("band")
+        if band:
+            if band == "24":
+                totalBand24 += 1
+            elif band == "5":
+                totalBand5 += 1
+            elif band == "6":
+                totalBand6 += 1
+            else: 
+                totalBandOther += 1
+
+    timestamp = int(time.time() * 1000000000)
+
+    print(f"mist_client_summary,org_id={ORG_ID} total_clients={totalClients},be_total={beTotal},ax_total={axTotal},ac_total={acTotal},n_total={nTotal},g_total={gTotal},b_total={bTotal},a_total={aTotal},other_protocol_total={otherTotal},total_24={totalBand24},total_5={totalBand5},total_6={totalBand6},total_band_other={totalBandOther} {timestamp}")        
             
 
 if __name__ == "__main__":
